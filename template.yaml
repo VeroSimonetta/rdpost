@@ -56,9 +56,6 @@ Mappings:
 
 Resources:
 
-
-
-   
 ############################## DEVOPS: PIPELINES Y CODEBUILD  ########################################################
   
   # Rol para CodePipeline y CodeBuild
@@ -184,14 +181,15 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub ${Environment}-bucket-cases  
-  # API Gateway
+
+# API Gateway
   RDPostApi:
     Type: AWS::ApiGateway::RestApi
     Properties:
       Name: !Ref AppName
       Description: 'API for a serverless application.'
 
-  # API Gateway Resources and Methods
+# API Gateway Resources and Methods
   APIGatewayPostResource:
     Type: AWS::ApiGateway::Resource
     Properties:
@@ -213,7 +211,7 @@ Resources:
       MethodResponses:
         - StatusCode: 200
 
-  # API Gateway Deployment
+# API Gateway Deployment
   ApiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
@@ -222,26 +220,16 @@ Resources:
       RestApiId: !Ref RDPostApi
       Description: Initial deployment
 
-  # API Gateway Stage
+# API Gateway Stage
   ApiGatewayStage:
     Type: AWS::ApiGateway::Stage
     Properties:
       StageName: !Ref Environment
       Description: !Sub ${Environment}-Stage
       RestApiId: !Ref RDPostApi
-      DeploymentId: !Ref ApiGatewayDeployment
+      DeploymentId: !Ref ApiGatewayDeployment 
 
-  # Permisos para que API Gateway invoque la Lambda
-  PermissionForPostWebcaseLambda:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: 'lambda:InvokeFunction'
-      FunctionName: !GetAtt PostWebcaseLambdaFunction.Arn
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RDPostApi}/*/POST/webcase'
- 
-
-   # --- IAM Role for Lambda ---
+# --- IAM Role for Lambda ---
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -260,7 +248,7 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
 
-  # Lambda Function post-webcase
+# Lambda Function post-webcase
   PostWebcaseLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -277,6 +265,14 @@ Resources:
         Variables:
           REGION_ID: !Ref AWS::Region
 
+# Permisos para que API Gateway invoque la Lambda
+  PermissionForPostWebcaseLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt PostWebcaseLambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RDPostApi}/*/POST/webcase'
 
 Outputs:
   LambdaFunctionName:
