@@ -32,16 +32,16 @@ Parameters:
     Default: RDPost
     Description: Name of application.
 
-  RepositoryId:
-    Description: Id del repositorio de github del proyecto de backend
-    Type: String  
+  #RepositoryId:
+  #  Description: Id del repositorio de github del proyecto de backend
+  #  Type: String  
 
-  GithubConnectionArn:
-    Description: Arn de la conexion desde la cuenta AWS al repositorio github (es necesario que esté previamente creada en la cuenta)
-    Type: String  
+  #GithubConnectionArn:
+  #  Description: Arn de la conexion desde la cuenta AWS al repositorio github (es necesario que esté previamente creada en la cuenta)
+  #  Type: String  
   
 Conditions:
-  IsProd: !Equals [!Ref Environment, "prod"]
+  IsProd: !Equals [!Ref Environment, "pro"]
 
   CreateDevResources: !Equals [ !Ref Environment, "dev"]
 
@@ -56,133 +56,34 @@ Mappings:
 
 Resources:
 
-############################## DEVOPS: PIPELINES Y CODEBUILD  ########################################################
-  
-  # Rol para CodePipeline y CodeBuild
-  PipelineRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: CodePipelineServiceRole
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - codepipeline.amazonaws.com
-                - codebuild.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess
-        - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
-        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
-        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+# --- DEVOPS: PIPELINES Y CODEBUILD  ---
 
-  # Proyecto de compilación para la Lambda en CodeBuild
-  BackendBuildProject:
-    Type: AWS::CodeBuild::Project
-    Properties:
-      Name: !Sub ${AppName}-build-${Environment}
-      Description: Proyecto de compilación para la función Lambda de ${AppName}
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: buildspec.yml
-      Artifacts:
-        Type: CODEPIPELINE
-      Environment:
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:7.0
-        Type: LINUX_CONTAINER
-        EnvironmentVariables:
-          - Name: S3_BUCKET
-            Value: !Ref ArtifactsBucket
-      ServiceRole: !GetAtt PipelineRole.Arn
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-
-  
-   # Pipeline para el proyecto de backend
-  RDPostLambdaFunctionCodePipeline:
-    Type: AWS::CodePipeline::Pipeline
-    Properties:
-      Name: !Join ["-", [!Ref AppName,"backend", !Ref Environment]]
-      PipelineType: V2
-      RoleArn: !GetAtt PipelineRole.Arn
-      ArtifactStore:
-        Type: S3
-        Location: !Ref ArtifactsBucket
-      Stages:
-        - Name: Source
-          Actions:
-            - Name: Source
-              ActionTypeId:
-                Category: Source
-                Owner: AWS
-                Provider: CodeStarSourceConnection
-                Version: "1"
-              RoleArn: !GetAtt PipelineRole.Arn
-              Configuration:
-                BranchName: !FindInMap
-                  - EnvMap
-                  - !Ref Environment
-                  - branch
-                DetectChanges: true
-                FullRepositoryId: !Ref RepositoryId
-                ConnectionArn: !Ref GithubConnectionArn
-              OutputArtifacts:
-                - Name: SourceArtifact
-              Region: !Ref AWS::Region
-              Namespace: SourceVariables
-              RunOrder: 1
-        - Name: Build
-          Actions:
-            - Name: Build
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: "1"
-              Configuration:
-                ProjectName: !Ref BackendBuildProject
-              InputArtifacts:
-                - Name: SourceArtifact
-              OutputArtifacts:
-                - Name: BuildArtifact
-              Region: !Ref AWS::Region
-              Namespace: BuildVariables
-              RunOrder: 1
-        - Name: Deploy
-          Actions:
-            - Name: DeployLambda
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Provider: CloudFormation
-                Version: "1"
-              Configuration:
-                ActionMode: CREATE_UPDATE
-                StackName: !Sub "${AppName}-Lambda-${Environment}"
-                Capabilities: CAPABILITY_NAMED_IAM
-                TemplatePath: BuildArtifact::template.yaml
-                ParameterOverrides: |
-                  {
-                    "Environment": "${Environment}"
-                  }
-              InputArtifacts:
-                - Name: BuildArtifact
-              RunOrder: 1  
-      Tags:
-        - Key: Env
-          Value: !Ref Environment
 
  #####
-  ArtifactsBucket:
+
+# --- Bucket S3 para almacenar los artefactos de CodeBuild ---
+  #ArtifactsBucket:
+  #  Type: AWS::S3::Bucket
+  #  Properties:
+  #    BucketName: !Sub ${Environment}-bucket-cases  
+
+  PostWebcaseBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub ${Environment}-bucket-cases  
+      BucketName: !Sub "${Environment}-post-webcase-bucket"
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
+ 
+  CreateCaseEmailBucket:
+    Type: AWS::S3::Bucket 
+    Properties:
+      BucketName: !Sub "${Environment}-create-case-email-bucket"
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
 
-# API Gateway
+# --- API Gateway ---
   RDPostApi:
     Type: AWS::ApiGateway::RestApi
     Properties:
@@ -190,32 +91,53 @@ Resources:
       Description: 'API for a serverless application.'
 
 # API Gateway Resources and Methods
-  APIGatewayPostResource:
+  APIGatewayPostCaseResource:
     Type: AWS::ApiGateway::Resource
     Properties:
       ParentId: !GetAtt RDPostApi.RootResourceId
       PathPart: 'webcase'
       RestApiId: !Ref RDPostApi
 
+  APIGatewaySupportResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt RDPostApi.RootResourceId
+      PathPart: 'support'
+      RestApiId: !Ref RDPostApi    
+  
+  APIGatewaySupportMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref APIGatewaySupportResource
+      RestApiId: !Ref RDPostApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub >-
+          arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SupportLambdaFunction.Arn}/invocations
+
+  
   APIGatewayPostMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       AuthorizationType: NONE
       HttpMethod: POST
-      ResourceId: !Ref APIGatewayPostResource
+      ResourceId: !Ref APIGatewayPostCaseResource
       RestApiId: !Ref RDPostApi
       Integration:
         Type: AWS_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PostWebcaseLambdaFunction.Arn}/invocations'
-      MethodResponses:
-        - StatusCode: 200
+
 
 # API Gateway Deployment
   ApiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
       - APIGatewayPostMethod
+      - APIGatewaySupportMethod
     Properties:
       RestApiId: !Ref RDPostApi
       Description: Initial deployment
@@ -244,9 +166,81 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess 
+      Policies:
+      - PolicyName: CustomerProfilesPermissions
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - "profile:CreateProfile"
+                - "profile:SearchProfiles"
+              Resource: "*" #"arn:aws:customer-profiles:eu-central-1:805246628735:domains/apser-demo"
+            - Effect: Allow
+              Action:
+                - connect:StartOutboundVoiceContact
+                - connect:StopContact
+                - connect:GetContactAttributes
+              Resource: "*"  
+            - Effect: Allow
+              Action:
+                - cases:CreateCase
+                - cases:BatchGetField
+                - cases:GetTemplate
+              Resource: "*"    
       Tags:
         - Key: Environment
           Value: !Ref Environment
+
+  LambdaExecutionCreateCaseEmailRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess 
+      Policies:
+      - PolicyName: CustomerProfilesPermissions
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - "profile:CreateProfile"
+                - "profile:SearchProfiles"
+              Resource: "*"  #"arn:aws:customer-profiles:eu-central-1:805246628735:domains/apser-demo"
+            - Effect: Allow
+              Action: 
+                - sts:GetCallerIdentity
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - connect:StartOutboundVoiceContact
+                - connect:StopContact
+                - connect:GetContactAttributes
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - cases:CreateCase
+                - cases:BatchGetField
+                - cases:GetTemplate
+                - cases:ListFields
+              Resource: "*" 
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+# --- Lambda Functions ---
 
 # Lambda Function post-webcase
   PostWebcaseLambdaFunction:
@@ -258,14 +252,50 @@ Resources:
       MemorySize: !Ref MemorySize
       Timeout: !Ref Timeout
       Code:
-        S3Bucket: !Ref ArtifactsBucket
+        S3Bucket: !Sub ${Environment}-bucket-cases-dev # !Ref ArtifactsBucket
         S3Key: post_webcase_function.zip
       Role: !GetAtt LambdaExecutionRole.Arn
       Environment:
         Variables:
           REGION_ID: !Ref AWS::Region
+          S3_BUCKET_NAME: !Ref PostWebcaseBucket
 
-# Permisos para que API Gateway invoque la Lambda
+# Lambda Function post-support
+  SupportLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${Environment}-post-support
+      Handler: support_app.handler
+      Runtime: python3.12
+      Timeout: 60
+      MemorySize: 256
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !Sub ${Environment}-bucket-cases-dev
+        S3Key: post_support_function.zip
+      Environment:
+        Variables:
+          REGION_ID: !Ref AWS::Region
+
+# Lambda Function create-case-email
+  CreateCaseEmailLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${Environment}-create-case-email
+      Handler: app.handler
+      Runtime: !Ref Runtime
+      MemorySize: !Ref MemorySize
+      Timeout: !Ref Timeout
+      Code:
+        S3Bucket: !Sub ${Environment}-bucket-cases-dev  #!Ref ArtifactsBucket
+        S3Key: create_case_email_function.zip
+      Role: !GetAtt LambdaExecutionCreateCaseEmailRole.Arn
+      Environment:
+        Variables:
+          REGION_ID: !Ref AWS::Region
+          S3_BUCKET_NAME: !Ref CreateCaseEmailBucket
+
+# --- Permisos para que API Gateway invoque la Lambda ---
   PermissionForPostWebcaseLambda:
     Type: AWS::Lambda::Permission
     Properties:
@@ -274,6 +304,14 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RDPostApi}/*/POST/webcase'
 
+  PermissionForSupportLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt SupportLambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RDPostApi}/*/POST/support'
+    
 Outputs:
   LambdaFunctionName:
     Description: Nombre de la función Lambda creada.
@@ -287,6 +325,12 @@ Outputs:
     Description: ARN del rol de ejecución de la función Lambda.
     Value: !GetAtt LambdaExecutionRole.Arn
 
-  ApiGatewayEndpoint:
+  # Salidas para obtener las URL de los endpoints
+  WebCasePostEndpoint:
+    Description: Endpoint POST /webcase
+    Value: !Sub "https://${RDPostApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/webcase"
+
+  WebCasePostSupportEndpoint:
     Description: 'La URL base para el API Gateway'
-    Value: !Sub 'https://${RDPostApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+    Value: !Sub 'https://${RDPostApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/support'
+  
