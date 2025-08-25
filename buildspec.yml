@@ -5,57 +5,38 @@ phases:
     runtime-versions:
       python: 3.12
     commands:
-      - echo "Instalando dependencias..."
-      - pip install --upgrade pip
-  pre_build:
-    commands:
-      - echo "Preparando entorno de build..."
-      - mkdir -p package
+      - echo "== Instalando dependencias si aplica =="
+
   build:
     commands:
-      - echo "Instalando dependencias en 'package'..."
-      - if [ -f requirements.txt ]; then pip install -r requirements.txt -t package; fi
-      - echo "Copiando archivos fuente a 'package'..."
-      - cp -r app.py package/  # Cambia esto si usas un layout distinto (como `app/handler.py`)
-      - cd package
-      - echo "Empaquetando Lambda..."
-      - zip -r ../post_webcase_function.zip .
-      - cd ..
-            # --- Empaquetando la función post_support_function ---
-      - echo "Empaquetando post_support_function..."
-      # Crea una carpeta temporal para la segunda función
-      - mkdir -p package_support
-      # Instala las dependencias en la carpeta de la función
-      - if [ -f requirements_support.txt ]; then pip install -r requirements_support.txt -t package_support; fi
-      # Copia el archivo de la función a la carpeta de empaquetado
-      - cp -r post_support_function.py package_support/
-      # Navega a la carpeta de la función y empaqueta el contenido en un archivo zip
-      - cd package_support
-      - zip -r ../post_support_function.zip .
-      - cd ..
+      - echo "== Empaquetando funciones Lambda =="
 
-      # --- Empaquetando la función post_email_function ---
-      - echo "Empaquetando post_email_function..."
-      # Crea una carpeta temporal para la tercera función
-      - mkdir -p package_email
-      # Instala las dependencias en la carpeta de la función
-      - if [ -f requirements_email.txt ]; then pip install -r requirements_email.txt -t package_email; fi
-      # Copia el archivo de la función a la carpeta de empaquetado
-      - cp -r post_email_function.py package_email/
-      # Navega a la carpeta de la función y empaqueta el contenido en un archivo zip
-      - cd package_email
-      - zip -r ../post_email_function.zip .
-      - cd ..
+      # Crear carpeta de salida
+      - mkdir -p output
 
+      # Empaquetar post_webcase
+      - echo "Empaquetando post_webcase"
+      - cd src/lambda/post_webcase
+      - zip -r ../../../../output/post_webcase_function.zip .
+      - cd -
 
-  post_build:
-    commands:
-      - echo "Build completado exitosamente"
+      # Empaquetar post_support
+      - echo "Empaquetando post_support"
+      - cd src/lambda/post_support
+      - zip -r ../../../../output/post_support_function.zip .
+      - cd -
+
+      # Empaquetar create_case_email
+      - echo "Empaquetando create_case_email"
+      - cd src/lambda/create_case_email
+      - zip -r ../../../../output/create_case_email_function.zip .
+      - cd -
+
+      # Copiar template.yaml
+      - echo "Copiando template.yaml"
+      - cp template.yaml output/
 
 artifacts:
   files:
-    - post_webcase_function.zip
-    - post_support_function.zip
-    - post_email_function.zip
-    - template.yaml
-    
+    - output/*
+  discard-paths: yes
