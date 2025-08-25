@@ -1,29 +1,19 @@
 version: 0.2
-
 phases:
-  install:
-    runtime-versions:
-      python: 3.12
-    commands:
-      - echo "Instalando dependencias..."
-      - pip install --upgrade pip
-  pre_build:
-    commands:
-      - echo "Preparando entorno de build..."
-      - mkdir -p package
   build:
     commands:
-      - echo "Instalando dependencias en 'package'..."
-      - if [ -f requirements.txt ]; then pip install -r requirements.txt -t package; fi
-      - echo "Copiando archivos fuente a 'package'..."
-      - cp -r app.py package/  # Cambia esto si usas un layout distinto (como `app/handler.py`)
-      - cd package
-      - echo "Empaquetando Lambda..."
-      - zip -r ../post_webcase_function.zip .
+      - echo "Empaquetando las funciones Lambda..."
+      - zip -r post_webcase_function.zip . -i 'app.py' 'template.yaml'
+      - zip -r post_support_function.zip . -i 'support_app.py' 'template.yaml'
+      - zip -r create_case_email_function.zip . -i 'email_app.py' 'template.yaml'
+      - echo "Validando la plantilla CloudFormation..."
+      - aws cloudformation validate-template --template-body file://template.yaml
   post_build:
     commands:
-      - echo "Build completado exitosamente"
-
+      - echo "Construcción completa. Subiendo artefactos."
 artifacts:
   files:
     - post_webcase_function.zip
+    - post_support_function.zip
+    - create_case_email_function.zip
+    - template.yaml

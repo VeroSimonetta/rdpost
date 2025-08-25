@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Plantilla CloudFormation para crear un pipeline de CI/CD para la aplicación RDPost.
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues:
+      - pre
+      - pro
+    Default: pre
+  AppName:
+    Type: String
+    Default: RDPost
+  RepositoryId:
+    Type: String
+  GithubConnectionArn:
+    Type: String 
+
+Mappings:
+  EnvMap:
+    pre:
+      branch: pre
+      detectChanges: true
+    pro:
+      branch: master
+      detectChanges: true
+
+Resources:
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CodePipelineServiceRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+                - codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess
+        - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
+        - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  BackendBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${AppName}-${Environment}-build
+      Description: Proyecto de compilación para la función Lambda de ${AppName}
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: S3_BUCKET
+            Value: !Ref ArtifactsBucket
+      ServiceRole: !GetAtt PipelineRole.Arn
+
+  RDPostLambdaFunctionCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Join ["-", [!Ref AppName,"backend", !Ref Environment]]
+      PipelineType: V2
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactsBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: "1"
+              RoleArn: !GetAtt PipelineRole.Arn
+              Configuration:
+                BranchName: !FindInMap [EnvMap, !Ref Environment, branch]
+                DetectChanges: true
+                FullRepositoryId: !Ref RepositoryId
+                ConnectionArn: !Ref GithubConnectionArn
+              OutputArtifacts:
+                - Name: SourceArtifact
+              Region: !Ref AWS::Region
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref BackendBuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+              Region: !Ref AWS::Region
+        - Name: Deploy
+          Actions:
+            - Name: DeployLambda
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: "1"
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                StackName: !Sub "${AppName}-${Environment}-Lambda"
+                Capabilities: CAPABILITY_NAMED_IAM
+                TemplatePath: BuildArtifact::template.yaml
+                ParameterOverrides: |
+                  { "Environment": "${Environment}" }
+              InputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 1
+
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub rdpost-${Environment}-${AWS::AccountId}-bucket-functions
