@@ -27,6 +27,7 @@ Mappings:
       detectChanges: true
 
 Resources:
+
   PipelineRole:
     Type: AWS::IAM::Role
     Properties:
@@ -45,7 +46,21 @@ Resources:
         - arn:aws:iam::aws:policy/AWSCodeBuildDeveloperAccess
         - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
-
+      Policies:
+        - PolicyName: CodeStarConnectionPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codestar-connections:UseConnection
+                  - codestar-connections:GetConnection
+                  - codestar-connections:PassConnection
+                Resource:
+                  - arn:aws:codestar-connections:eu-west-1:211125561005:connection/1727f4e5-7f84-4a62-bca1-d83f5ff9d674
+                  - arn:aws:codeconnections:eu-west-1:211125561005:connection/1727f4e5-7f84-4a62-bca1-d83f5ff9d674
+                #Resource: !Ref GithubConnectionArn
+  
   BackendBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -129,4 +144,4 @@ Resources:
   ArtifactsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub rdpost-${Environment}-${AWS::AccountId}-bucket-functions
+      BucketName: !Sub rdpost-${Environment}-bucket-functions
