@@ -1,44 +1,25 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: >
-  Plantilla CloudFormation para crear funciones función Lambda y un API Gateway para diferentes entornos.
-  Incluye recursos de API Gateway que invoca la función Lambda.
+Description: Plantilla para los recursos de la aplicación serverless (Lambda y API Gateway).
 
 Parameters:
   Environment:
     Type: String
-    Description: Entorno para la función Lambda (dev o prod)
-    AllowedValues:
-      - dev
-      - prod
-    Default: dev
-
   Runtime:
     Type: String
-    Description: Runtime de la función Lambda.
     Default: python3.12
-
   MemorySize:
     Type: Number
-    Description: Cantidad de memoria asignada a la función Lambda en MB.
     Default: 256
-
   Timeout:
     Type: Number
-    Description: Tiempo máximo de ejecución de la función Lambda en segundos.
     Default: 60
-
   AppName:
     Type: String
     Default: RDPost
-    Description: Name of application.
-
-Conditions:
-  IsProd: !Equals [!Ref Environment, "prod"]
 
 Resources:
-
-  # --- IAM Role for Lambda ---
-  LambdaExecutionRole:
+  # Los roles IAM para Lambda
+  RdPostLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -47,28 +28,127 @@ Resources:
           - Effect: Allow
             Principal:
               Service: lambda.amazonaws.com
-            Action:
-              - sts:AssumeRole
+            Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+      Policies:
+        - PolicyName: CustomerProfilesPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "profile:CreateProfile"
+                  - "profile:SearchProfiles"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - connect:StartOutboundVoiceContact
+                  - connect:StopContact
+                  - connect:GetContactAttributes
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - cases:CreateCase
+                  - cases:BatchGetField
+                  - cases:GetTemplate
+                Resource: "*"
       Tags:
         - Key: Environment
           Value: !Ref Environment
 
-  # Lambda Function post-webcase
+  RdPostLambdaExecutionCreateCaseEmailRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+      Policies:
+        - PolicyName: CustomerProfilesPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "profile:CreateProfile"
+                  - "profile:SearchProfiles"
+                Resource: "*"
+              - Effect: Allow
+                Action: sts:GetCallerIdentity
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - connect:StartOutboundVoiceContact
+                  - connect:StopContact
+                  - connect:GetContactAttributes
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - cases:CreateCase
+                  - cases:BatchGetField
+                  - cases:GetTemplate
+                  - cases:ListFields
+                Resource: "*"
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Las funciones Lambda
   PostWebcaseLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub ${Environment}-post-webcase
+      FunctionName: !Sub rdpost-${Environment}-lambda-post-webcase
       Handler: app.handler
       Runtime: !Ref Runtime
       MemorySize: !Ref MemorySize
       Timeout: !Ref Timeout
       Code:
-        S3Bucket: !Sub ${Environment}-bucket-cases
+        S3Bucket: !ImportValue ArtifactsBucketName
         S3Key: post_webcase_function.zip
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt RdPostLambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          REGION_ID: !Ref AWS::Region
+
+  SupportLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub rdpost-${Environment}-lambda-post-support
+      Handler: support_app.handler
+      Runtime: python3.12
+      Timeout: 60
+      MemorySize: 256
+      Role: !GetAtt RdPostLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: !ImportValue ArtifactsBucketName
+        S3Key: post_support_function.zip
+      Environment:
+        Variables:
+          REGION_ID: !Ref AWS::Region
+  
+  CreateCaseEmailLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub rdpost-${Environment}-lambda-create-case-email
+      Handler: app.handler
+      Runtime: !Ref Runtime
+      MemorySize: !Ref MemorySize
+      Timeout: !Ref Timeout
+      Code:
+        S3Bucket: !ImportValue ArtifactsBucketName
+        S3Key: create_case_email_function.zip
+      Role: !GetAtt RdPostLambdaExecutionCreateCaseEmailRole.Arn
       Environment:
         Variables:
           REGION_ID: !Ref AWS::Region
@@ -77,44 +157,56 @@ Resources:
   RDPostApi:
     Type: AWS::ApiGateway::RestApi
     Properties:
-      Name: !Ref AppName
+      Name: !Sub ${AppName}-${Environment}
       Description: 'API for a serverless application.'
 
-  # API Gateway Resources and Methods
-  APIGatewayPostResource:
+  APIGatewayPostCaseResource:
     Type: AWS::ApiGateway::Resource
     Properties:
-      ParentId:
-        Fn::GetAtt:
-          - RDPostApi
-          - RootResourceId
+      ParentId: !GetAtt RDPostApi.RootResourceId
       PathPart: 'webcase'
       RestApiId: !Ref RDPostApi
+
+  APIGatewaySupportResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt RDPostApi.RootResourceId
+      PathPart: 'support'
+      RestApiId: !Ref RDPostApi
+
+  APIGatewaySupportMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref APIGatewaySupportResource
+      RestApiId: !Ref RDPostApi
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${SupportLambdaFunction.Arn}/invocations'
 
   APIGatewayPostMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       AuthorizationType: NONE
       HttpMethod: POST
-      ResourceId: !Ref APIGatewayPostResource
+      ResourceId: !Ref APIGatewayPostCaseResource
       RestApiId: !Ref RDPostApi
       Integration:
         Type: AWS_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PostWebcaseLambdaFunction.Arn}/invocations'
-      MethodResponses:
-        - StatusCode: 200
 
-  # API Gateway Deployment
   ApiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
       - APIGatewayPostMethod
+      - APIGatewaySupportMethod
     Properties:
       RestApiId: !Ref RDPostApi
       Description: Initial deployment
 
-  # API Gateway Stage
   ApiGatewayStage:
     Type: AWS::ApiGateway::Stage
     Properties:
@@ -123,7 +215,6 @@ Resources:
       RestApiId: !Ref RDPostApi
       DeploymentId: !Ref ApiGatewayDeployment
 
-  # Permisos para que API Gateway invoque la Lambda
   PermissionForPostWebcaseLambda:
     Type: AWS::Lambda::Permission
     Properties:
@@ -132,19 +223,10 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RDPostApi}/*/POST/webcase'
 
-Outputs:
-  LambdaFunctionName:
-    Description: Nombre de la función Lambda creada.
-    Value: !Ref PostWebcaseLambdaFunction
-
-  LambdaFunctionArn:
-    Description: ARN de la función Lambda creada.
-    Value: !GetAtt PostWebcaseLambdaFunction.Arn
-
-  LambdaExecutionRoleArn:
-    Description: ARN del rol de ejecución de la función Lambda.
-    Value: !GetAtt LambdaExecutionRole.Arn
-
-  ApiGatewayEndpoint:
-    Description: 'La URL base para el API Gateway'
-    Value: !Sub 'https://${RDPostApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+  PermissionForSupportLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !GetAtt SupportLambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RDPostApi}/*/POST/support'

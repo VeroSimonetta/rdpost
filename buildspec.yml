@@ -4,14 +4,39 @@ phases:
   install:
     runtime-versions:
       python: 3.12
+    commands:
+      - echo "== Instalando dependencias si aplica =="
+
   build:
     commands:
-      - echo "Empaquetando Lambda..."
-      - cd lambda
-      - zip -r ../post_webcase_function.zip .
-      - cd ..
+      - echo "== Empaquetando funciones Lambda =="
+
+      # Crear carpeta de salida
+      - mkdir -p output
+
+      # Empaquetar post_webcase
+      - echo "Empaquetando post_webcase"
+      - cd src/lambda/post_webcase
+      - zip -r ../../../../output/post_webcase_function.zip .
+      - cd -
+
+      # Empaquetar post_support
+      - echo "Empaquetando post_support"
+      - cd src/lambda/post_support
+      - zip -r ../../../../output/post_support_function.zip .
+      - cd -
+
+      # Empaquetar create_case_email
+      - echo "Empaquetando create_case_email"
+      - cd src/lambda/create_case_email
+      - zip -r ../../../../output/create_case_email_function.zip .
+      - cd -
+
+      # Copiar template.yaml
+      - echo "Copiando template.yaml"
+      - cp template.yaml output/
 
 artifacts:
   files:
-    - post_webcase_function.zip
-    - template.yaml
+    - output/*
+  discard-paths: yes
