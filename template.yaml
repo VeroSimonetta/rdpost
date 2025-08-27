@@ -296,7 +296,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub rdpost-${Environment}-lambda-post-webcase
-      Handler: app.handler
+      Handler: app.lambda_handler
       Runtime: !Ref Runtime
       MemorySize: !Ref MemorySize
       Timeout: !Ref Timeout
@@ -314,7 +314,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub rdpost-${Environment}-lambda-post-support
-      Handler: support_app.handler
+      Handler: app.lambda_handler
       Runtime: python3.12
       Timeout: 60
       MemorySize: 256
@@ -331,7 +331,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub rdpost-${Environment}-lambda-create-case-email
-      Handler: app.handler
+      Handler: app.lambda_handler
       Runtime: !Ref Runtime
       MemorySize: !Ref MemorySize
       Timeout: !Ref Timeout
@@ -349,7 +349,7 @@ Resources:
 #    Type: AWS::Lambda::Function
 #    Properties:
 #      FunctionName: !Sub ${Environment}-create-case-redirected-email
-#      Handler: app.handler
+#      Handler: app.lambda_handler
 #      Runtime: !Ref Runtime
 #      MemorySize: !Ref MemorySize
 #      Timeout: !Ref Timeout

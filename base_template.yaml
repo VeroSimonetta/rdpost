@@ -56,10 +56,11 @@ Resources:
                   - codestar-connections:UseConnection
                   - codestar-connections:GetConnection
                   - codestar-connections:PassConnection
-                Resource:
-                  - arn:aws:codestar-connections:eu-west-1:211125561005:connection/1727f4e5-7f84-4a62-bca1-d83f5ff9d674
-                  - arn:aws:codeconnections:eu-west-1:211125561005:connection/1727f4e5-7f84-4a62-bca1-d83f5ff9d674
-                #Resource: !Ref GithubConnectionArn
+                Resource: !Ref GithubConnectionArn  
+                #Resource:
+                 # - arn:aws:codestar-connections:eu-west-1:211125561005:connection/1727f4e5-7f84-4a62-bca1-d83f5ff9d674
+                 # - arn:aws:codeconnections:eu-west-1:211125561005:connection/1727f4e5-7f84-4a62-bca1-d83f5ff9d674
+                
   
   BackendBuildProject:
     Type: AWS::CodeBuild::Project
